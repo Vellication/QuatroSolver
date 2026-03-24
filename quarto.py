@@ -1,4 +1,5 @@
 import copy
+
 # An individual piece
 class Piece:
 	def __init__(self, light, tall, solid, square):
@@ -18,7 +19,7 @@ class Piece:
 		return name
 
 # Generate all pieces
-def pieces_start():
+def piecesStart():
 	piecesList = []
 	for i in range(2):
 		for j in range(2):
@@ -34,14 +35,30 @@ class GameState:
 		self.currentPiece = currentPiece
 		self.availablePieces = availablePieces
 
+	LINES = [
+    # rows
+    [(0,0),(0,1),(0,2),(0,3)],
+    [(1,0),(1,1),(1,2),(1,3)],
+    [(2,0),(2,1),(2,2),(2,3)],
+    [(3,0),(3,1),(3,2),(3,3)],
+    # columns
+    [(0,0),(1,0),(2,0),(3,0)],
+    [(0,1),(1,1),(2,1),(3,1)],
+    [(0,2),(1,2),(2,2),(3,2)],
+    [(0,3),(1,3),(2,3),(3,3)],
+    # diagonals
+    [(0,0),(1,1),(2,2),(3,3)],
+    [(3,0),(2,1),(1,2),(0,3)],
+	]
+
 	# Starts a new game
 	@classmethod
-	def new_game(cls):
-		board = [[None, None, None, None], 
-				 [None, None, None, None], 
-				 [None, None, None, None], 
-				 [None, None, None, None]]
-		availablePieces = pieces_start()
+	def newGame(cls):
+		board = [[None,None,None,None], 
+				 [None,None,None,None], 
+				 [None,None,None,None], 
+				 [None,None,None,None]]
+		availablePieces = piecesStart()
 		return cls(board, None, availablePieces)
 
 	def __str__(self):
@@ -49,7 +66,7 @@ class GameState:
 		for i in range(4):
 			for j in range(4):
 				if self.board[i][j] == None:
-					state += "XXXX "
+					state += "OOOO "
 				else:
 					state += str(self.board[i][j]) + " "
 			state += "\n"
@@ -62,7 +79,7 @@ class GameState:
 				return piece
 		return None
 
-	# Picks a pieces from available choices
+	# Picks a piece from available choices
 	def choosePiece(self, piece):
 		piece = self.findPiece(piece)
 		self.currentPiece = piece
@@ -74,14 +91,13 @@ class GameState:
 		self.currentPiece = None
 
 	# Returns the piece at a location
-	def checkPiece(self, x, y):
+	def getPiece(self, x, y):
 		return self.board[x][y]
 
 	def isQuarto(self, p1, p2, p3, p4):
 		# any cells are empty
 		if any(p is None for p in [p1, p2, p3, p4]):
 			return False
-
 		traitList = ('light', 'tall', 'solid', 'square')
 		for trait in traitList:
 			t1 = getattr(p1, trait)
@@ -92,76 +108,85 @@ class GameState:
 				return True
 		return False
 
+	def quartoProx(self, line):
+		allPieces = [self.getPiece(x, y) for x, y in line]
+		proximityDict = {}
+		placedPieces = [p for p in [p1, p2, p3, p4] if p is not None]
+
+		traitList = ('light', 'tall', 'solid', 'square')
+		for trait in traitList:
+			trueCount = sum(1 for p in placedPieces if getattr(p, trait))
+			falseCount = len(placedPieces) - trueCount
+			if trueCount > 0 and falseCount > 0:
+				proximityDict[trait] = False  # Quarto impossible for this trait
+			else:
+				proximityDict[trait] = max(trueCount, falseCount)
+		return max(proximityDict.values())
+
 	def checkQuarto(self):
-		for i in range(4):
-			if self.isQuarto(self.checkPiece(i, 0), self.checkPiece(i, 1), 
-							self.checkPiece(i, 2), self.checkPiece(i, 3)):
+		for line in self.LINES:
+			if self.isQuarto(*(self.getPiece(x, y) for x, y in line)):
 				return True
-			if self.isQuarto(self.checkPiece(0, i), self.checkPiece(1, i), 
-							self.checkPiece(2, i), self.checkPiece(3, i)):
-				return True
-		if self.isQuarto(self.checkPiece(0, 0), self.checkPiece(1, 1), 
-						self.checkPiece(2, 2), self.checkPiece(3, 3)):
-			return True
-		if self.isQuarto(self.checkPiece(3, 0), self.checkPiece(2, 1), 
-						self.checkPiece(1, 2), self.checkPiece(0, 3)):
-			return True 
 		return False
 
-count = 0 
+nodeCount = 0
 
-def minimax(state, is_maximizer, is_placing):
-	global count
-	count += 1
-	if count % 10000 == 0: print("Nodes visited:", count)
+def minimax(state, isMaximizer, isPlacing, alpha=float('-inf'), beta=float('inf')):
+	global nodeCount
 
-	# Termination conditions first
+	nodeCount += 1
+	if nodeCount % 10000 == 0: print("Nodes visited:", nodeCount)
+
+	# End conditions
 	if state.checkQuarto():  # someone just won
 		return -1, None
 	if len(state.availablePieces) == 0:  # board is full
 		return 0, None
-	
-	# Then handle the recursive cases
-	if is_placing:
+
+	# Recursive call with alpha-beta pruning
+	if isPlacing:
 		best = float('-inf')
-		best_move = None
+		bestMove = None
 		for x in range(4):
 			for y in range(4):
-				if state.checkPiece(x, y) is None:
-					new_state = copy.deepcopy(state)
-					new_state.placePiece(x, y)
-					score, _ = minimax(new_state, is_maximizer, not is_placing)
+				if state.getPiece(x, y) is None:
+					newState = copy.deepcopy(state)
+					newState.placePiece(x, y)
+					score, _ = minimax(newState, isMaximizer, not isPlacing, alpha, beta)
 					if score > best:
 						best = score
-						best_move = (x, y)
-		return best, best_move
+						bestMove = (x, y)
+					alpha = max(alpha, score)
+					if alpha >= beta: return best, bestMove
+		return best, bestMove
 	else:
 		best = float('inf')
-		best_move = None
+		bestMove = None
 		for piece in state.availablePieces:
-			new_state = copy.deepcopy(state)
-			new_state.choosePiece(str(piece))
-			score, _ = minimax(new_state, not is_maximizer, is_placing)
+			newState = copy.deepcopy(state)
+			newState.choosePiece(str(piece))
+			score, _ = minimax(newState, not isMaximizer, isPlacing, alpha, beta)
 			if score < best:
 				best = score
-				best_move = str(piece)
-		return best, best_move
+				bestMove = str(piece)
+			beta = min(beta, score)
+			if alpha >= beta: return best, bestMove
+		return best, bestMove
+
 def main():
-	game = GameState.new_game()
-	# Manually place three tall pieces in row 0
+	game = GameState.newGame()
+	# Test scenario that's one move away from victory
 	game.choosePiece("TTFF")
 	game.placePiece(0, 0)
 	game.choosePiece("TTFT")
 	game.placePiece(0, 1)
 	game.choosePiece("TFTF")
 	game.placePiece(0, 2)
-	# Set up the winning piece
 	game.choosePiece("TFFF")
 	print(game)
-	# Ask minimax for the best move
-	score, best_move = minimax(game, True, True)
-	print("Best move:", best_move)
-	print("Score:", score)
+
+	# test quartoProx
+	print(game.checkQuarto())
 
 if __name__ == '__main__':
 	main()
